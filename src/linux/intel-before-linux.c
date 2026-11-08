@@ -3,6 +3,12 @@
  * Indexed gmux transactions and switch values follow Linux apple-gmux.c.
  * Apple Set OS protocol follows 0xbb/apple_set_os.efi (MIT).
  * No NVRAM writes, GPU power changes, or external-display mux changes.
+ *
+ * MODIFIED 2026-11-08 by lockedcitizen: changed the fixed Linux UKI path
+ * from the upstream Omarchy image to \\EFI\\Linux\\linux.efi, changed the
+ * checkpoint log path to \\EFI\\IntelOnly\\intel-before-linux.log, and
+ * adjusted diagnostic strings. All hardware register logic remains derived
+ * from the upstream GPL-2.0-only implementation; see ATTRIBUTION.md.
  */
 #include <efi.h>
 #include <efilib.h>
