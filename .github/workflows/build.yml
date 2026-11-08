@@ -24,9 +24,11 @@ jobs:
       - name: Build
         run: make
 
-      - name: Upload EFI artifact
+      - name: Upload EFI artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: IntelOnly-UEFI-x86_64
-          path: build/IntelOnly.efi
+          name: MacBookPro11-5-IntelOnly-EFI
+          path: |
+            build/IntelOnly.efi
+            build/IntelLinux.efi
           if-no-files-found: error
