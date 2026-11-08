@@ -40,8 +40,8 @@ static EFI_GUID gop_guid =
     {0x9042a9de,0x23dc,0x4a38,{0x96,0xfb,0x7a,0xde,0xd0,0x80,0x51,0x6a}};
 
 static BOOLEAN is_target_model(VOID) {
-    SMBIOS_TABLE_ENTRY_POINT *ep = NULL;
-    SMBIOS_TABLE_3_0_ENTRY_POINT *ep3 = NULL;
+    SMBIOS_TABLE_ENTRY_POINT_LOCAL *ep = NULL;
+    SMBIOS_TABLE_3_0_ENTRY_POINT_LOCAL *ep3 = NULL;
     UINT8 *p, *end;
     if (!EFI_ERROR(LibGetSystemConfigurationTable(&SMBIOSTableGuid,(VOID **)&ep))) {
         p=(UINT8 *)(UINTN)ep->TableAddress; end=p+ep->TableLength;
