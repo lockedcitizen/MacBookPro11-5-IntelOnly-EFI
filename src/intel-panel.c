@@ -2,8 +2,9 @@
 /*
  * IntelPanel.efi — MacBookPro11,5 internal-panel GMUX handoff.
  *
- * Selects Intel DDC and the internal panel, assigns four DDI lanes to
- * Haswell Port A, verifies readback, then returns to the caller (OpenCore).
+ * Sets Apple Set OS identity to Mac OS X 10.9, selects Intel DDC and the
+ * internal panel, assigns four DDI lanes to Haswell Port A, verifies readback,
+ * then returns to the caller (OpenCore).
  * It deliberately does not load an operating system, write NVRAM, change
  * GPU power, or touch the external-display mux.
  *
@@ -40,6 +41,15 @@ typedef struct {
 #define DDI_BUF_CTL_E   0x64400
 #define DDI_ENABLE      (1U << 31)
 #define DDI_A_4_LANES   (1U << 4)
+
+/* Apple Set OS protocol: advertise the requested Apple OS identity to firmware. */
+typedef struct {
+    UINT64 version;
+    EFI_STATUS (EFIAPI *set_os_version)(CHAR8 *);
+    EFI_STATUS (EFIAPI *set_os_vendor)(CHAR8 *);
+} APPLE_SET_OS;
+static EFI_GUID apple_set_os_guid =
+    {0xc5c5da95,0x7d5c,0x45e6,{0xb2,0xf1,0x3f,0xd5,0x2b,0xb1,0x00,0x77}};
 
 static inline UINT8 io_in8(UINT16 port) {
     UINT8 v; __asm__ volatile("inb %w1,%0" : "=a"(v) : "Nd"(port)); return v;
@@ -145,6 +155,7 @@ static EFI_STATUS ddi_write_a(EFI_PCI_IO_PROTOCOL *pci, UINT32 v) {
 EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *st) {
     EFI_STATUS status=EFI_UNSUPPORTED;
     EFI_PCI_IO_PROTOCOL *intel=NULL;
+    APPLE_SET_OS *apple=NULL;
     UINT32 gmux_version=0, old_a=0, port_e=0, check_a=0;
     UINT8 old_display=0, old_ddc=0, check=0;
     BOOLEAN lanes_changed=FALSE, mux_touched=FALSE;
@@ -152,6 +163,23 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *st) {
     Print(L"IntelPanel: MacBookPro11,5 Intel internal display handoff\r\n");
 
     if (!is_target_model()) { Print(L"Refusing: SMBIOS model is not MacBookPro11,5.\r\n"); return EFI_UNSUPPORTED; }
+    status=uefi_call_wrapper(BS->LocateProtocol,3,&apple_set_os_guid,NULL,(VOID **)&apple);
+    if (EFI_ERROR(status) || !apple || !apple->set_os_version) {
+        Print(L"Refusing: Apple Set OS protocol is unavailable.\r\n");
+        return EFI_UNSUPPORTED;
+    }
+    status=uefi_call_wrapper(apple->set_os_version,1,(CHAR8 *)"Mac OS X 10.9");
+    if (EFI_ERROR(status)) {
+        Print(L"Refusing: Apple Set OS version call failed (%r).\r\n",status);
+        return status;
+    }
+    if (apple->version >= 2 && apple->set_os_vendor) {
+        status=uefi_call_wrapper(apple->set_os_vendor,1,(CHAR8 *)"Apple Inc.");
+        if (EFI_ERROR(status)) {
+            Print(L"Warning: Apple Set OS vendor call failed (%r).\r\n",status);
+        }
+    }
+    Print(L"Apple Set OS: Mac OS X 10.9\r\n");
     if (!gmux_read32(4,&gmux_version) ||
         (gmux_version&0xffffff00)!=0x04001400 ||
         !gmux_read8(GMUX_DISPLAY,&old_display) ||
