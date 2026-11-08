@@ -31,4 +31,5 @@ jobs:
           path: |
             build/IntelOnly.efi
             build/IntelLinux.efi
+            build/IntelPanel.efi
           if-no-files-found: error
