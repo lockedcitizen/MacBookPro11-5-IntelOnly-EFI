@@ -14,6 +14,22 @@
 #include <efilib.h>
 #include <efipciio.h>
 
+/* GNU-EFI does not expose these SMBIOS entry-point layouts. */
+#pragma pack(push, 1)
+typedef struct {
+    CHAR8 Anchor[4]; UINT8 Checksum, Length, MajorVersion, MinorVersion;
+    UINT16 MaximumStructureSize; UINT8 EntryPointRevision, FormattedArea[5];
+    CHAR8 IntermediateAnchor[5]; UINT8 IntermediateChecksum;
+    UINT16 TableLength; UINT32 TableAddress; UINT16 NumberOfStructures;
+    UINT8 BcdRevision;
+} SMBIOS_TABLE_ENTRY_POINT;
+typedef struct {
+    CHAR8 Anchor[5]; UINT8 Checksum, Length, MajorVersion, MinorVersion;
+    UINT8 DocRevision, EntryPointRevision, Reserved;
+    UINT32 TableMaximumSize; UINT64 TableAddress;
+} SMBIOS_TABLE_3_0_ENTRY_POINT;
+#pragma pack(pop)
+
 #define BASE 0x700
 #define VALUE 0xc2
 #define READ 0xd0
