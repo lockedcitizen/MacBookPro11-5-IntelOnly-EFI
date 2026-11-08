@@ -8,13 +8,21 @@ system starts. HDMI/external-display support is out of scope.
 
 ## Current status
 
-Two EFI binaries are built:
+Three EFI binaries are built:
 
-- `IntelOnly.efi`: read-only diagnostic scaffold. It does not modify hardware.
-- `IntelLinux.efi`: experimental **Linux-only** Intel panel handoff prototype,
-  adapted from the model-specific upstream implementation documented below.
+- `IntelOnly.efi`: read-only diagnostic scaffold.
+- `IntelLinux.efi`: experimental Linux-only handoff prototype.
+- `IntelPanel.efi`: experimental panel-switch utility intended to be launched
+  from the OpenCore picker. It selects Intel DDC and the internal panel,
+  assigns four lanes to Intel Haswell DDI Port A, verifies the register
+  readbacks, and returns to OpenCore (`EFI_SUCCESS`) without launching an OS.
 
-**IntelLinux.efi is not a universal Windows/macOS/Linux boot manager.**
+**IntelPanel.efi is the multi-OS handoff option:** after it returns, select
+macOS, Linux or Windows in OpenCore. This is an experimental firmware-state
+handoff, not a guarantee that every OS will preserve or correctly initialize
+the Intel display path. It does not itself disable or power off the AMD GPU.
+
+**IntelLinux.efi remains Linux-only.**
 It expects a Linux Unified Kernel Image (UKI) at
 `\\EFI\\Linux\\linux.efi` on the same EFI System Partition and forwards
 the helper's EFI load options as the Linux image command line. Create the
@@ -26,7 +34,7 @@ not been performed on the repository owner's machine.
 
 ## Hardware checks and handoff
 
-The Linux helper follows the upstream MacBookPro11,5-specific sequence:
+The Intel panel utility and Linux helper use the following model-specific sequence:
 
 1. Require SMBIOS product `MacBookPro11,5`.
 2. Locate and load the configured Linux UKI before making display changes.
@@ -38,8 +46,9 @@ The Linux helper follows the upstream MacBookPro11,5-specific sequence:
    port is enabled or unreadable.
 7. Allocate four lanes to Port A, verify readback, select Intel DDC and the
    internal panel through GMUX, and verify selector readback.
-8. Start the Linux UKI. If execution returns or an error occurs, attempt to
-   restore the original lane allocation and GMUX selectors.
+8. For `IntelPanel.efi`, return to OpenCore after successful readback. If an
+   error occurs, attempt to restore the original lane allocation and GMUX
+   selectors. For `IntelLinux.efi`, start the configured Linux UKI instead.
 
 The helper does not write NVRAM, change the external-display mux, or power
 off the AMD GPU. Intel panel routing is not proof that the AMD GPU is
@@ -69,6 +78,7 @@ Outputs:
 
 - `build/IntelOnly.efi`
 - `build/IntelLinux.efi`
+- `build/IntelPanel.efi`
 
 GitHub Actions builds both and uploads them as a workflow artifact. CI
 compilation is not equivalent to firmware or hardware validation.
