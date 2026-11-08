@@ -40,6 +40,10 @@ $(BUILD)/IntelLinux.so: $(BUILD)/linux.o
 	$(LD) $(LDFLAGS) $(EFI_CRT) $< -L$(EFI_LIB) -lefi -lgnuefi -o $@
 	test -z "$$(nm -u $@)"
 
+$(BUILD)/IntelPanel.so: $(BUILD)/intel-panel.o
+	$(LD) $(LDFLAGS) $(EFI_CRT) $< -L$(EFI_LIB) -lefi -lgnuefi -o $@
+	test -z "$(nm -u $@)"
+
 $(BUILD)/IntelOnly.efi: $(BUILD)/IntelOnly.so
 	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
 	file $@
