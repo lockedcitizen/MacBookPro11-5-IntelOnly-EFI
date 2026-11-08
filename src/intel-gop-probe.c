@@ -11,6 +11,21 @@
 #include <efilib.h>
 #include <efipciio.h>
 
+#pragma pack(push, 1)
+typedef struct {
+    CHAR8 Anchor[4]; UINT8 Checksum, Length, MajorVersion, MinorVersion;
+    UINT16 MaximumStructureSize; UINT8 EntryPointRevision, FormattedArea[5];
+    CHAR8 IntermediateAnchor[5]; UINT8 IntermediateChecksum;
+    UINT16 TableLength; UINT32 TableAddress; UINT16 NumberOfStructures;
+    UINT8 BcdRevision;
+} SMBIOS_TABLE_ENTRY_POINT_LOCAL;
+typedef struct {
+    CHAR8 Anchor[5]; UINT8 Checksum, Length, MajorVersion, MinorVersion;
+    UINT8 DocRevision, EntryPointRevision, Reserved;
+    UINT32 TableMaximumSize; UINT64 TableAddress;
+} SMBIOS_TABLE_3_0_ENTRY_POINT_LOCAL;
+#pragma pack(pop)
+
 typedef struct {
     UINT32 Version;
     UINT32 HorizontalResolution;
