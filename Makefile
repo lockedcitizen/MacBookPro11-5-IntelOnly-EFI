@@ -18,7 +18,7 @@ EFI_SECTIONS := -j .text -j .sdata -j .data -j .rodata -j .dynamic \
                 -j .dynsym -j .dynstr -j .rel -j .rela -j .reloc
 
 .PHONY: all clean
-all: $(BUILD)/IntelOnly.efi $(BUILD)/IntelLinux.efi $(BUILD)/IntelPanel.efi
+all: $(BUILD)/IntelOnly.efi $(BUILD)/IntelLinux.efi $(BUILD)/IntelPanel.efi $(BUILD)/intel-before-linux-upstream.efi
 
 $(BUILD):
 	mkdir -p $@
@@ -30,6 +30,9 @@ $(BUILD)/linux.o: src/linux/intel-before-linux.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/intel-panel.o: src/intel-panel.c | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/upstream-linux.o: src/linux/upstream-intel-before-linux.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/IntelOnly.so: $(BUILD)/main.o
@@ -44,6 +47,10 @@ $(BUILD)/IntelPanel.so: $(BUILD)/intel-panel.o
 	$(LD) $(LDFLAGS) $(EFI_CRT) $< -L$(EFI_LIB) -lefi -lgnuefi -o $@
 	test -z "$(nm -u $@)"
 
+$(BUILD)/intel-before-linux-upstream.so: $(BUILD)/upstream-linux.o
+	$(LD) $(LDFLAGS) $(EFI_CRT) $< -L$(EFI_LIB) -lefi -lgnuefi -o $@
+	test -z "$(nm -u $@)"
+
 $(BUILD)/IntelOnly.efi: $(BUILD)/IntelOnly.so
 	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
 	file $@
@@ -55,6 +62,11 @@ $(BUILD)/IntelLinux.efi: $(BUILD)/IntelLinux.so
 	sha256sum $@
 
 $(BUILD)/IntelPanel.efi: $(BUILD)/IntelPanel.so
+	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
+	file $@
+	sha256sum $@
+
+$(BUILD)/intel-before-linux-upstream.efi: $(BUILD)/intel-before-linux-upstream.so
 	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
 	file $@
 	sha256sum $@
