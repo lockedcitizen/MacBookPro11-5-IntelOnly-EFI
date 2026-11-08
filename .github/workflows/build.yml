@@ -32,4 +32,5 @@ jobs:
             build/IntelOnly.efi
             build/IntelLinux.efi
             build/IntelPanel.efi
+            build/intel-before-linux-upstream.efi
           if-no-files-found: error
