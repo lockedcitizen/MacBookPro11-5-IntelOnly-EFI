@@ -6,35 +6,44 @@ EFI_CRT ?= $(EFI_LIB)/crt0-efi-$(ARCH).o
 EFI_LDS ?= $(EFI_LIB)/elf_$(ARCH)_efi.lds
 
 BUILD := build
-OBJ := $(BUILD)/main.o
-SO := $(BUILD)/IntelOnly.so
-TARGET := $(BUILD)/IntelOnly.efi
-
 CC := gcc
 LD := ld
 OBJCOPY := objcopy
-
 CFLAGS := -I$(EFI_INC) -I$(EFI_ARCH_INC) -DGNU_EFI_USE_MS_ABI \
           -fpic -ffreestanding -fno-stack-protector -fno-stack-check \
           -fshort-wchar -mno-red-zone -maccumulate-outgoing-args \
-          -Wall -Wextra -O2
+          -Wall -Wextra -Werror -O2
 LDFLAGS := -nostdlib -znocombreloc -T $(EFI_LDS) -shared -Bsymbolic
+EFI_SECTIONS := -j .text -j .sdata -j .data -j .rodata -j .dynamic \
+                -j .dynsym -j .dynstr -j .rel -j .rela -j .reloc
 
 .PHONY: all clean
-all: $(TARGET)
+all: $(BUILD)/IntelOnly.efi $(BUILD)/IntelLinux.efi
 
 $(BUILD):
 	mkdir -p $@
 
-$(OBJ): src/main.c | $(BUILD)
+$(BUILD)/main.o: src/main.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(SO): $(OBJ)
-	$(LD) $(LDFLAGS) $(EFI_CRT) $< -L$(EFI_LIB) -lefi -lgnuefi -o $@
+$(BUILD)/linux.o: src/linux/intel-before-linux.c | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
 
-$(TARGET): $(SO)
-	$(OBJCOPY) -j .text -j .sdata -j .data -j .dynamic -j .dynsym \
-	  -j .rel -j .rela -j .reloc -O pei-x86-64 --subsystem=10 $< $@
+$(BUILD)/IntelOnly.so: $(BUILD)/main.o
+	$(LD) $(LDFLAGS) $(EFI_CRT) $< -L$(EFI_LIB) -lefi -lgnuefi -o $@
+	test -z "$$(nm -u $@)"
+
+$(BUILD)/IntelLinux.so: $(BUILD)/linux.o
+	$(LD) $(LDFLAGS) $(EFI_CRT) $< -L$(EFI_LIB) -lefi -lgnuefi -o $@
+	test -z "$$(nm -u $@)"
+
+$(BUILD)/IntelOnly.efi: $(BUILD)/IntelOnly.so
+	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
+	file $@
+	sha256sum $@
+
+$(BUILD)/IntelLinux.efi: $(BUILD)/IntelLinux.so
+	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
 	file $@
 	sha256sum $@
 
