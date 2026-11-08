@@ -18,7 +18,7 @@ EFI_SECTIONS := -j .text -j .sdata -j .data -j .rodata -j .dynamic \
                 -j .dynsym -j .dynstr -j .rel -j .rela -j .reloc
 
 .PHONY: all clean
-all: $(BUILD)/IntelOnly.efi $(BUILD)/IntelLinux.efi
+all: $(BUILD)/IntelOnly.efi $(BUILD)/IntelLinux.efi $(BUILD)/IntelPanel.efi
 
 $(BUILD):
 	mkdir -p $@
@@ -27,6 +27,9 @@ $(BUILD)/main.o: src/main.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/linux.o: src/linux/intel-before-linux.c | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/intel-panel.o: src/intel-panel.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/IntelOnly.so: $(BUILD)/main.o
@@ -43,6 +46,11 @@ $(BUILD)/IntelOnly.efi: $(BUILD)/IntelOnly.so
 	sha256sum $@
 
 $(BUILD)/IntelLinux.efi: $(BUILD)/IntelLinux.so
+	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
+	file $@
+	sha256sum $@
+
+$(BUILD)/IntelPanel.efi: $(BUILD)/IntelPanel.so
 	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
 	file $@
 	sha256sum $@
