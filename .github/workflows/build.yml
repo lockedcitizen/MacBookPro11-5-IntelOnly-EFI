@@ -1,9 +1,10 @@
-name: Build EFI
+name: Build MacBookPro11-5-GMUX.efi
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "gmux/mbp115-indexed-clean" ]
   pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
@@ -11,27 +12,28 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Install GNU-EFI toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential binutils gnu-efi file
-
+          sudo apt-get install -y build-essential gnu-efi binutils file
       - name: Build
-        run: make
-
-      - name: Upload EFI artifacts
+        run: make clean all
+      - name: Verify EFI application
+        run: |
+          set -eux
+          test -s build/MacBookPro11-5-GMUX.efi
+          file build/MacBookPro11-5-GMUX.efi
+          file build/MacBookPro11-5-GMUX.efi | grep -qi 'PE32'
+          sha256sum build/MacBookPro11-5-GMUX.efi
+      - name: Upload EFI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MacBookPro11-5-IntelOnly-EFI
-          path: |
-            build/IntelOnly.efi
-            build/IntelLinux.efi
-            build/IntelPanel.efi
-            build/IntelGOPProbe.efi
-            build/intel-before-linux-upstream.efi
+          name: MacBookPro11-5-GMUX
+          path: build/MacBookPro11-5-GMUX.efi
           if-no-files-found: error
+          retention-days: 30

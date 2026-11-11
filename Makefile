@@ -1,87 +1,36 @@
 ARCH := x86_64
-EFI_INC ?= /usr/include/efi
-EFI_ARCH_INC ?= /usr/include/efi/$(ARCH)
-EFI_LIB ?= /usr/lib
-EFI_CRT ?= $(EFI_LIB)/crt0-efi-$(ARCH).o
-EFI_LDS ?= $(EFI_LIB)/elf_$(ARCH)_efi.lds
+TARGET := build/MacBookPro11-5-GMUX.efi
+OBJECT := build/main.o
+EFI_INC := /usr/include/efi
+EFI_LIB := /usr/lib
 
-BUILD := build
-CC := gcc
-LD := ld
-OBJCOPY := objcopy
-CFLAGS := -I$(EFI_INC) -I$(EFI_ARCH_INC) -DGNU_EFI_USE_MS_ABI \
+CFLAGS := -I$(EFI_INC) -I$(EFI_INC)/$(ARCH) -DGNU_EFI_USE_MS_ABI \
           -fpic -ffreestanding -fno-stack-protector -fno-stack-check \
           -fshort-wchar -mno-red-zone -maccumulate-outgoing-args \
-          -Wall -Wextra -Werror -O2
-LDFLAGS := -nostdlib -znocombreloc -T $(EFI_LDS) -shared -Bsymbolic
-EFI_SECTIONS := -j .text -j .sdata -j .data -j .rodata -j .dynamic \
-                -j .dynsym -j .dynstr -j .rel -j .rela -j .reloc
+          -Wall -Wextra -Werror -O2 -D$(ARCH)
+LDFLAGS := -nostdlib -znocombreloc -T $(EFI_LIB)/elf_$(ARCH)_efi.lds \
+           -shared -Bsymbolic
 
 .PHONY: all clean
-all: $(BUILD)/IntelOnly.efi $(BUILD)/IntelLinux.efi $(BUILD)/IntelPanel.efi $(BUILD)/IntelGOPProbe.efi $(BUILD)/intel-before-linux-upstream.efi
+all: $(TARGET)
 
-$(BUILD):
-	mkdir -p $@
+build:
+	mkdir -p build
 
-$(BUILD)/main.o: src/main.c | $(BUILD)
-	$(CC) $(CFLAGS) -c $< -o $@
+$(OBJECT): src/main.c | build
+	gcc $(CFLAGS) -c $< -o $@
 
-$(BUILD)/linux.o: src/linux/intel-before-linux.c | $(BUILD)
-	$(CC) $(CFLAGS) -c $< -o $@
+build/GMUX.so: $(OBJECT)
+	ld $(LDFLAGS) $(EFI_LIB)/crt0-efi-$(ARCH).o $< \
+	   -L$(EFI_LIB) -lefi -lgnuefi -o $@
 
-$(BUILD)/intel-panel.o: src/intel-panel.c | $(BUILD)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD)/intel-gop-probe.o: src/intel-gop-probe.c | $(BUILD)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD)/upstream-linux.o: src/linux/upstream-intel-before-linux.c | $(BUILD)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD)/IntelOnly.so: $(BUILD)/main.o
-	$(LD) $(LDFLAGS) $(EFI_CRT) $< -L$(EFI_LIB) -lefi -lgnuefi -o $@
-	test -z "$$(nm -u $@)"
-
-$(BUILD)/IntelLinux.so: $(BUILD)/linux.o
-	$(LD) $(LDFLAGS) $(EFI_CRT) $< -L$(EFI_LIB) -lefi -lgnuefi -o $@
-	test -z "$$(nm -u $@)"
-
-$(BUILD)/IntelPanel.so: $(BUILD)/intel-panel.o
-	$(LD) $(LDFLAGS) $(EFI_CRT) $< -L$(EFI_LIB) -lefi -lgnuefi -o $@
-	test -z "$(nm -u $@)"
-
-$(BUILD)/IntelGOPProbe.so: $(BUILD)/intel-gop-probe.o
-	$(LD) $(LDFLAGS) $(EFI_CRT) $< -L$(EFI_LIB) -lefi -lgnuefi -o $@
-	test -z "$(nm -u $@)"
-
-$(BUILD)/intel-before-linux-upstream.so: $(BUILD)/upstream-linux.o
-	$(LD) $(LDFLAGS) $(EFI_CRT) $< -L$(EFI_LIB) -lefi -lgnuefi -o $@
-	test -z "$(nm -u $@)"
-
-$(BUILD)/IntelOnly.efi: $(BUILD)/IntelOnly.so
-	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
-	file $@
-	sha256sum $@
-
-$(BUILD)/IntelLinux.efi: $(BUILD)/IntelLinux.so
-	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
-	file $@
-	sha256sum $@
-
-$(BUILD)/IntelPanel.efi: $(BUILD)/IntelPanel.so
-	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
-	file $@
-	sha256sum $@
-
-$(BUILD)/IntelGOPProbe.efi: $(BUILD)/IntelGOPProbe.so
-	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
-	file $@
-	sha256sum $@
-
-$(BUILD)/intel-before-linux-upstream.efi: $(BUILD)/intel-before-linux-upstream.so
-	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
+$(TARGET): build/GMUX.so
+	objcopy -j .text -j .data -j .rodata -j .dynamic -j .dynsym \
+	        -j .dynstr -j .rel -j .rela -j .reloc \
+	        -O pei-x86-64 --subsystem=10 $< $@
+	test -z "$$(nm -u build/GMUX.so)"
 	file $@
 	sha256sum $@
 
 clean:
-	rm -rf $(BUILD)
+	rm -rf build

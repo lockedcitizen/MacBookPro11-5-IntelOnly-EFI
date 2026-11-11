@@ -1,109 +1,75 @@
-# MacBookPro11,5 Intel Display EFI
+# MacBookPro11,5 Indexed GMUX UEFI
 
-Experimental UEFI project for the Mid-2015 15-inch Retina MacBook Pro
-(`MacBookPro11,5`, Intel Iris Pro 5200 + Radeon R9 M370X).
+A clean-room, model-specific UEFI utility for the 2015 15-inch Retina MacBook Pro (MacBookPro11,5).
 
-Goal: select Intel graphics for the internal Retina panel before an operating
-system starts. HDMI/external-display support is out of scope.
+This project uses the GMUX *indexed I/O* interface found on pre-T2 Retina MacBook Pros. It is not a T2 SMC/MMIO implementation.
 
-## Current status
+## Current scope
 
-Three EFI binaries are built:
+- Refuses to operate unless SMBIOS identifies `MacBookPro11,5`.
+- Requires Intel Iris Pro 5200 PCI identity `8086:0d26` at `0000:00:02.0`.
+- Requires the indexed GMUX version signature documented by the MacBookPro11,5 reference helper (4.0.20).
+- Reads and verifies Haswell DDI Port A and Port E before changing the Port A four-lane allocation bit.
+- Can select Intel DDC and the internal display through GMUX and verify both selectors.
+- Can restore the values observed at startup.
+- Makes no NVRAM writes and does not power off the Radeon.
+- Returns to the caller (for example, OpenCore) when an action completes.
 
-- `IntelOnly.efi`: read-only diagnostic scaffold.
-- `IntelLinux.efi`: experimental Linux-only handoff prototype.
-- `IntelPanel.efi`: experimental panel-switch utility intended to be launched
-  from the OpenCore picker. It selects Intel DDC and the internal panel,
-  assigns four lanes to Intel Haswell DDI Port A, verifies the register
-  readbacks, and returns to OpenCore (`EFI_SUCCESS`) without launching an OS.
+**This is an experimental bring-up project. It has not yet been validated on physical hardware.** A successful build is not proof that the display will remain visible after changing the mux.
 
-**IntelPanel.efi is the multi-OS handoff option:** after it returns, select
-macOS, Linux or Windows in OpenCore. This is an experimental firmware-state
-handoff, not a guarantee that every OS will preserve or correctly initialize
-the Intel display path. It does not itself disable or power off the AMD GPU.
+## Keys
 
-**IntelLinux.efi remains Linux-only.**
-It expects a Linux Unified Kernel Image (UKI) at
-`\\EFI\\Linux\\linux.efi` on the same EFI System Partition and forwards
-the helper's EFI load options as the Linux image command line. Create the
-`\\EFI\\IntelOnly\\` directory on the ESP for its checkpoint log.
-These paths are currently compiled into the source.
+| Key | Action |
+|---|---|
+| `I` | Select Intel DDC + internal panel, allocate four lanes on Haswell Port A if both DDI ports are disabled, verify readback, then return to the caller |
+| `R` | Restore the GMUX selectors and Port A lane allocation captured at startup, then return |
+| `Esc` | Exit without making changes |
 
-Do not install either binary as your default boot path. Hardware testing has
-not been performed on the repository owner's machine.
+The app deliberately does not offer an AMD power-off operation. GPU rail control is separate from display mux selection and must not be guessed.
 
-## Hardware checks and handoff
+## Hardware facts used
 
-The Intel panel utility and Linux helper use the following model-specific sequence:
+- Model: `MacBookPro11,5`
+- Intel GPU: Iris Pro 5200, PCI ID `8086:0d26`
+- AMD GPU: Radeon R9 M370X, PCI ID `1002:6821`
+- Indexed GMUX base used by the tested reference: I/O `0x700`
+- GMUX selectors: DDC `0x28`, display `0x10`
+- Intel DDI registers: Port A `0x64000`, Port E `0x64400`
+- Four-lane allocation bit: Port A bit 4
+- Intel selector values: DDC `1`, internal display `2`
 
-1. Require SMBIOS product `MacBookPro11,5`.
-2. Locate and load the configured Linux UKI before making display changes.
-3. Call Apple's Set OS protocol with the macOS 10.9 identity.
-4. Require GMUX firmware 4.0.20 at I/O base `0x700` and validate initial
-   display/DDC selector values.
-5. Verify Intel GPU `8086:0d26` at PCI `0000:00:02.0`.
-6. Read Intel DDI Port A and E registers. Refuse to reallocate lanes if either
-   port is enabled or unreadable.
-7. Allocate four lanes to Port A, verify readback, select Intel DDC and the
-   internal panel through GMUX, and verify selector readback.
-8. For `IntelPanel.efi`, return to OpenCore after successful readback. If an
-   error occurs, attempt to restore the original lane allocation and GMUX
-   selectors. For `IntelLinux.efi`, start the configured Linux UKI instead.
-
-The helper does not write NVRAM, change the external-display mux, or power
-off the AMD GPU. Intel panel routing is not proof that the AMD GPU is
-electrically powered down.
-
-## Linux requirements
-
-The reference configuration loads `apple-gmux` before `i915` in the
-initramfs. A Linux distribution may require corresponding early-KMS setup.
-The upstream tested environment used Omarchy/Limine; this repository's helper
-uses a generic UKI filename, but that does not make the rest of the tested
-kernel configuration portable without validation.
-
-The helper's checkpoint log is written to
-`\\EFI\\IntelOnly\\intel-before-linux.log` on the same ESP.
+The GMUX transaction protocol and selector values follow the Linux `apple-gmux` driver. The model-specific device IDs, GMUX version guard, and DDI preconditions follow the MacBookPro11,5 Intel EFI research project.
 
 ## Build
 
-On x86-64 Ubuntu/Debian with GCC, binutils, GNU-EFI and make:
+GitHub Actions builds `MacBookPro11-5-GMUX.efi` with GNU-EFI on Ubuntu. Push a commit to this branch or run the workflow manually; download the artifact from the Actions run.
+
+Local build on Debian/Ubuntu:
 
 ```sh
-sudo apt-get install build-essential binutils gnu-efi file
-make
+sudo apt-get update
+sudo apt-get install -y build-essential gnu-efi binutils
+make clean all
 ```
 
-Outputs:
+Output: `build/MacBookPro11-5-GMUX.efi`.
 
-- `build/IntelOnly.efi`
-- `build/IntelLinux.efi`
-- `build/IntelPanel.efi`
+## Testing and recovery
 
-GitHub Actions builds both and uploads them as a workflow artifact. CI
-compilation is not equivalent to firmware or hardware validation.
+1. Keep a known-good OpenCore entry that bypasses this utility.
+2. First test from a removable EFI partition or a separate OpenCore Tools entry.
+3. Do not overwrite your normal OpenCore loader.
+4. Start with `Esc` to confirm that model/GPU/GMUX detection works.
+5. Only then test `I`. The display can go black after the mux changes because the firmware GOP may still describe the AMD framebuffer.
+6. If the screen becomes unusable, force power off and boot through the untouched recovery entry. This utility does not write NVRAM, so it does not intentionally persist the selection across a cold boot.
 
-## Windows and macOS status
+The utility restores settings only if you invoke `R` or if an internal operation fails before it returns. It cannot restore the display after the operating system has taken over.
 
-Windows Boot Manager and macOS/OpenCore handoff are **not implemented or
-tested**. Do not assume the Linux-specific UKI loading and EFI load-option
-handling works for them. A cross-OS design needs separate bootloader handoff
-and validation for each OS.
+## References and attribution
 
-## Safety and recovery
+- GMUX menu/UEFI design inspiration: https://github.com/Osaul4ik/t2-gmux-uefi
+- MacBookPro11,5 hardware and Intel handoff reference: https://github.com/bbatchelder/macbookpro11-5-intel-efi
+- Indexed GMUX protocol and selector definitions: https://github.com/torvalds/linux/blob/master/drivers/platform/x86/apple-gmux.c and https://github.com/torvalds/linux/blob/master/include/linux/apple-gmux.h
+- Intel Haswell display register definitions: Linux i915 display register headers.
 
-- Keep a known-good direct OpenCore/Windows/Linux boot path.
-- Test from a USB EFI System Partition first.
-- Keep Secure Boot disabled for this unsigned development binary.
-- Never replace `EFI/BOOT/BOOTX64.EFI`.
-- Use a separate test boot entry; do not change the default until tested.
-- If the helper fails or the child image returns, it attempts to restore the
-  original GMUX selectors and Port A lane register. Restoration cannot be
-  guaranteed after a firmware/hardware fault.
-- No AMD power-off operation is implemented.
-
-## Attribution and license
-
-The Linux helper is adapted from
-[bbatchelder/macbookpro11-5-intel-efi](https://github.com/bbatchelder/macbookpro11-5-intel-efi).
-See [ATTRIBUTION.md](ATTRIBUTION.md) and [LICENSE](LICENSE).
+This repository is an independent, model-specific implementation. It does not copy the T2 project's MMIO/SMC control path. Source is licensed GPL-2.0-only; see SPDX notices in the source.
