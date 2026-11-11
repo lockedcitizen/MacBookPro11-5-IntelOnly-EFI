@@ -23,8 +23,7 @@ jobs:
         run: |
           set -euxo pipefail
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\
-            ca-certificates git build-essential gnu-efi binutils file
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git build-essential gnu-efi binutils file
       - name: Checkout
         uses: actions/checkout@v4
       - name: Show Debian toolchain
