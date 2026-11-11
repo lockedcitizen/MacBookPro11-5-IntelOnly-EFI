@@ -2,7 +2,7 @@ name: Build MacBookPro11-5-GMUX.efi
 
 on:
   push:
-    branches: [ "gmux/mbp115-indexed-clean" ]
+    branches: [ "gmux/mbp115-indexed-clean", "macos/mbp115-gop-diagnostic" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
