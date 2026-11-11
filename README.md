@@ -8,7 +8,7 @@ system starts. HDMI/external-display support is out of scope.
 
 ## Current status
 
-Three EFI binaries are built:
+Five original EFI binaries are built, plus an opt-in AMD-off variant:
 
 - `IntelOnly.efi`: read-only diagnostic scaffold.
 - `IntelLinux.efi`: experimental Linux-only handoff prototype.
@@ -16,6 +16,12 @@ Three EFI binaries are built:
   from the OpenCore picker. It selects Intel DDC and the internal panel,
   assigns four lanes to Intel Haswell DDI Port A, verifies the register
   readbacks, and returns to OpenCore (`EFI_SUCCESS`) without launching an OS.
+  It leaves AMD powered.
+- `IntelPanelAMDOff.efi`: a separate experimental variant. It repeats the
+  model/GPU/DDI/GMUX checks, confirms Intel panel routing, then requests
+  Radeon rail-off through indexed GMUX port `0x50`. It requires Radeon
+  `1002:6821` to be detected first and never requests power-on. It has not
+  been hardware-validated and may leave OpenCore invisible if Intel GOP is absent.
 
 **IntelPanel.efi is the multi-OS handoff option:** after it returns, select
 macOS, Linux or Windows in OpenCore. This is an experimental firmware-state
@@ -79,16 +85,24 @@ Outputs:
 - `build/IntelOnly.efi`
 - `build/IntelLinux.efi`
 - `build/IntelPanel.efi`
+- `build/IntelPanelAMDOff.efi`
 
 GitHub Actions builds both and uploads them as a workflow artifact. CI
 compilation is not equivalent to firmware or hardware validation.
 
-## Windows and macOS status
+## macOS / OpenCore
 
-Windows Boot Manager and macOS/OpenCore handoff are **not implemented or
-tested**. Do not assume the Linux-specific UKI loading and EFI load-option
-handling works for them. A cross-OS design needs separate bootloader handoff
-and validation for each OS.
+`IntelPanel.efi` and `IntelPanelAMDOff.efi` are EFI applications intended
+to be launched manually from OpenCore's picker (Tools). They return to the
+OpenCore caller; they do not load macOS themselves. The AMD-off variant is
+experimental: macOS may reinitialize the Radeon, and PCI config readback is
+not a measurement of electrical power. Read
+[`docs/MACOS-AMD-OFF.md`](docs/MACOS-AMD-OFF.md) before testing.
+
+No claim is made that AMD-off works on any macOS release. The normal
+`IntelPanel.efi` mode leaves the Radeon powered and is the safer first test.
+Run the Intel GOP probe before changing the mux; without an Intel GOP, the
+OpenCore picker can become invisible after routing the panel away from AMD.
 
 ## Safety and recovery
 

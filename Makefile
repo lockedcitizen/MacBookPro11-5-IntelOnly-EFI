@@ -18,7 +18,7 @@ EFI_SECTIONS := -j .text -j .sdata -j .data -j .rodata -j .dynamic \
                 -j .dynsym -j .dynstr -j .rel -j .rela -j .reloc
 
 .PHONY: all clean
-all: $(BUILD)/IntelOnly.efi $(BUILD)/IntelLinux.efi $(BUILD)/IntelPanel.efi $(BUILD)/IntelGOPProbe.efi $(BUILD)/intel-before-linux-upstream.efi
+all: $(BUILD)/IntelOnly.efi $(BUILD)/IntelLinux.efi $(BUILD)/IntelPanel.efi $(BUILD)/IntelPanelAMDOff.efi $(BUILD)/IntelGOPProbe.efi $(BUILD)/intel-before-linux-upstream.efi
 
 $(BUILD):
 	mkdir -p $@
@@ -31,6 +31,9 @@ $(BUILD)/linux.o: src/linux/intel-before-linux.c | $(BUILD)
 
 $(BUILD)/intel-panel.o: src/intel-panel.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/intel-panel-amd-off.o: src/intel-panel.c | $(BUILD)
+	$(CC) $(CFLAGS) -DINTEL_PANEL_DISABLE_AMD -c $< -o $@
 
 $(BUILD)/intel-gop-probe.o: src/intel-gop-probe.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -47,6 +50,10 @@ $(BUILD)/IntelLinux.so: $(BUILD)/linux.o
 	test -z "$$(nm -u $@)"
 
 $(BUILD)/IntelPanel.so: $(BUILD)/intel-panel.o
+	$(LD) $(LDFLAGS) $(EFI_CRT) $< -L$(EFI_LIB) -lefi -lgnuefi -o $@
+	test -z "$(nm -u $@)"
+
+$(BUILD)/IntelPanelAMDOff.so: $(BUILD)/intel-panel-amd-off.o
 	$(LD) $(LDFLAGS) $(EFI_CRT) $< -L$(EFI_LIB) -lefi -lgnuefi -o $@
 	test -z "$(nm -u $@)"
 
@@ -69,6 +76,11 @@ $(BUILD)/IntelLinux.efi: $(BUILD)/IntelLinux.so
 	sha256sum $@
 
 $(BUILD)/IntelPanel.efi: $(BUILD)/IntelPanel.so
+	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
+	file $@
+	sha256sum $@
+
+$(BUILD)/IntelPanelAMDOff.efi: $(BUILD)/IntelPanelAMDOff.so
 	$(OBJCOPY) $(EFI_SECTIONS) -O pei-x86-64 --subsystem=10 $< $@
 	file $@
 	sha256sum $@

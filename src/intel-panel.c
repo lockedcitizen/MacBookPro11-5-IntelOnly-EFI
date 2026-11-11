@@ -42,6 +42,15 @@ typedef struct {
 #define DDI_ENABLE      (1U << 31)
 #define DDI_A_4_LANES   (1U << 4)
 
+#ifdef INTEL_PANEL_DISABLE_AMD
+#define AMD_VENDOR_ID           0x1002
+#define AMD_DEVICE_ID           0x6821
+#define GMUX_INTERRUPT_ENABLE   0x14
+#define GMUX_INTERRUPT_STATUS   0x16
+#define GMUX_DISCRETE_POWER     0x50
+#define GMUX_POWER_EVENT        0x04
+#endif
+
 /* Apple Set OS protocol: advertise the requested Apple OS identity to firmware. */
 typedef struct {
     UINT64 version;
@@ -144,6 +153,74 @@ static EFI_STATUS find_intel(EFI_PCI_IO_PROTOCOL **out) {
     }
     FreePool(handles); return st;
 }
+
+#ifdef INTEL_PANEL_DISABLE_AMD
+/* Require the exact Radeon fitted to the MacBookPro11,5 before rail control. */
+static EFI_STATUS find_amd(EFI_PCI_IO_PROTOCOL **out) {
+    EFI_HANDLE *handles=NULL; UINTN count=0;
+    EFI_STATUS st=uefi_call_wrapper(BS->LocateHandleBuffer,5,ByProtocol,
+        &PciIoProtocol,NULL,&count,&handles);
+    if (EFI_ERROR(st)) return st;
+    st=EFI_NOT_FOUND;
+    for (UINTN i=0;i<count;++i) {
+        EFI_PCI_IO_PROTOCOL *pci=NULL;
+        UINT32 id=0;
+        EFI_STATUS x=uefi_call_wrapper(BS->HandleProtocol,3,handles[i],
+            &PciIoProtocol,(VOID **)&pci);
+        if (EFI_ERROR(x) || !pci) continue;
+        x=uefi_call_wrapper(pci->Pci.Read,5,pci,EfiPciIoWidthUint32,0,1,&id);
+        if (!EFI_ERROR(x) && id==((AMD_DEVICE_ID<<16)|AMD_VENDOR_ID)) {
+            *out=pci; st=EFI_SUCCESS; break;
+        }
+    }
+    FreePool(handles);
+    return st;
+}
+
+/*
+ * Indexed GMUX discrete-power sequence from apple-gmux:
+ * write 1, then 0 = request dGPU OFF. Poll the power event if available,
+ * with a bounded delay fallback. This function never requests power ON.
+ */
+static BOOLEAN gmux_power_off(BOOLEAN *event_seen) {
+    UINT8 old_mask=0, bits=0;
+    BOOLEAN mask_valid=gmux_read8(GMUX_INTERRUPT_ENABLE,&old_mask);
+    if (event_seen) *event_seen=FALSE;
+    if (!mask_valid) return FALSE;
+    if (!gmux_write8(GMUX_INTERRUPT_ENABLE,0xff)) {
+        gmux_write8(GMUX_INTERRUPT_ENABLE,old_mask);
+        return FALSE;
+    }
+    if (gmux_read8(GMUX_INTERRUPT_STATUS,&bits) && bits)
+        gmux_write8(GMUX_INTERRUPT_STATUS,bits);
+
+    if (!gmux_write8(GMUX_DISCRETE_POWER,1) ||
+        !gmux_write8(GMUX_DISCRETE_POWER,0)) {
+        gmux_write8(GMUX_INTERRUPT_ENABLE,old_mask);
+        return FALSE;
+    }
+
+    for (UINTN i=0;i<200;++i) {
+        if (gmux_read8(GMUX_INTERRUPT_STATUS,&bits) &&
+            (bits&GMUX_POWER_EVENT)) {
+            if (event_seen) *event_seen=TRUE;
+            gmux_write8(GMUX_INTERRUPT_STATUS,bits);
+            break;
+        }
+        uefi_call_wrapper(BS->Stall,1,1000);
+    }
+    if (event_seen && *event_seen)
+        uefi_call_wrapper(BS->Stall,1,20000);
+    else
+        uefi_call_wrapper(BS->Stall,1,250000);
+
+    if (gmux_read8(GMUX_INTERRUPT_STATUS,&bits) && bits)
+        gmux_write8(GMUX_INTERRUPT_STATUS,bits);
+    gmux_write8(GMUX_INTERRUPT_ENABLE,old_mask);
+    return TRUE;
+}
+#endif
+
 static EFI_STATUS ddi_read(EFI_PCI_IO_PROTOCOL *pci, UINT64 reg, UINT32 *v) {
     return uefi_call_wrapper(pci->Mem.Read,6,pci,EfiPciIoWidthUint32,0,reg,1,v);
 }
@@ -155,6 +232,11 @@ static EFI_STATUS ddi_write_a(EFI_PCI_IO_PROTOCOL *pci, UINT32 v) {
 EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *st) {
     EFI_STATUS status=EFI_UNSUPPORTED;
     EFI_PCI_IO_PROTOCOL *intel=NULL;
+#ifdef INTEL_PANEL_DISABLE_AMD
+    EFI_PCI_IO_PROTOCOL *amd=NULL;
+    UINT32 amd_identity=0xffffffff;
+    BOOLEAN power_event=FALSE;
+#endif
     APPLE_SET_OS *apple=NULL;
     UINT32 gmux_version=0, old_a=0, port_e=0, check_a=0;
     UINT8 old_display=0, old_ddc=0, check=0;
@@ -191,6 +273,14 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *st) {
     }
     status=find_intel(&intel);
     if (EFI_ERROR(status)) { Print(L"Intel GPU 8086:0d26 not found.\r\n"); return status; }
+#ifdef INTEL_PANEL_DISABLE_AMD
+    status=find_amd(&amd);
+    if (EFI_ERROR(status)) {
+        Print(L"Refusing AMD-off mode: expected Radeon 1002:6821 not found.\r\n");
+        return status;
+    }
+    Print(L"Radeon 1002:6821 detected; rail-off will be attempted after panel verification.\r\n");
+#endif
 
     status=ddi_read(intel,DDI_BUF_CTL_A,&old_a);
     if (EFI_ERROR(status)) return status;
@@ -222,6 +312,29 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *st) {
 
     Print(L"SUCCESS: Intel DDI Port A allocated four lanes.\r\n");
     Print(L"SUCCESS: GMUX DDC=Intel (1), internal panel=Intel (2).\r\n");
+#ifdef INTEL_PANEL_DISABLE_AMD
+    Print(L"Requesting Radeon rail OFF through indexed GMUX port 0x50...\r\n");
+    if (!gmux_power_off(&power_event)) {
+        Print(L"ERROR: GMUX AMD power-off transaction failed or timed out.\r\n");
+        Print(L"Intel panel routing is retained; Radeon power state is unknown.\r\n");
+        uefi_call_wrapper(BS->Stall,1,3000000);
+        return EFI_DEVICE_ERROR;
+    }
+    status=uefi_call_wrapper(amd->Pci.Read,5,amd,EfiPciIoWidthUint32,0,1,&amd_identity);
+    if (EFI_ERROR(status) || amd_identity==0xffffffff ||
+        amd_identity!=((AMD_DEVICE_ID<<16)|AMD_VENDOR_ID)) {
+        Print(L"AMD-off request accepted; PCI config no longer reports Radeon 1002:6821.\r\n");
+        Print(L"GMUX power event: %s. PCI readback is not an electrical power measurement.\r\n",
+              power_event ? L"seen" : L"not seen (settle delay used)");
+    } else {
+        Print(L"WARNING: GMUX accepted the command, but Radeon PCI config still responds.\r\n");
+        Print(L"AMD power-off is NOT confirmed; Intel panel routing is retained.\r\n");
+        uefi_call_wrapper(BS->Stall,1,3000000);
+        return EFI_DEVICE_ERROR;
+    }
+#else
+    Print(L"Radeon left powered; use IntelPanelAMDOff.efi only for experimental rail-off.\r\n");
+#endif
     Print(L"Returning to OpenCore. Keep a direct recovery boot entry.\r\n");
     uefi_call_wrapper(BS->Stall,1,1500000);
     return EFI_SUCCESS;
