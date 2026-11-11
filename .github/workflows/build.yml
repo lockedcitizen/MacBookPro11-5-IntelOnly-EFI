@@ -12,15 +12,29 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install GNU-EFI toolchain
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gnu-efi binutils file
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if sudo apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then exit 1; fi
+            sleep "$((attempt * 10))"
+          done
+          for attempt in 1 2 3 4 5; do
+            if sudo apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y build-essential gnu-efi binutils file; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then exit 1; fi
+            sleep "$((attempt * 10))"
+          done
       - name: Build
         run: make clean all
       - name: Verify EFI application
