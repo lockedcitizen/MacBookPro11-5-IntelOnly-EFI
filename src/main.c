@@ -386,11 +386,13 @@ static EFI_STATUS select_intel(VOID)
     return EFI_SUCCESS;
 }
 
-static VOID wait_for_key(VOID)
+static EFI_INPUT_KEY wait_for_key(EFI_SYSTEM_TABLE *system_table)
 {
     EFI_INPUT_KEY key;
-    while (uefi_call_wrapper(ST->ConIn->ReadKeyStroke, 2, ST->ConIn, &key) == EFI_NOT_READY)
+    while (uefi_call_wrapper(system_table->ConIn->ReadKeyStroke, 2,
+                             system_table->ConIn, &key) == EFI_NOT_READY)
         uefi_call_wrapper(BS->Stall, 1, 10000);
+    return key;
 }
 
 EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
@@ -420,7 +422,7 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
     Print(L"Choose: ");
 
     for (;;) {
-        wait_for_key();
+        key = wait_for_key(system_table);
         if (key.ScanCode == SCAN_ESC || key.UnicodeChar == 0x1b) {
             Print(L"Exit without changes.\r\n");
             return EFI_SUCCESS;
